@@ -54,7 +54,7 @@ class Matcher(nn.Module):
                 cur_idx = torch.where(cluster_indices == 0)[0][0] # find the idx of the first pred which is not assigned yet
                 if ious[cur_idx, cur_idx]<0.99:
                     print(cur_idx)
-                    print(iou.shape)
+                    print(ious.shape)
                     print(pred_boxes_cat[cur_idx])
                     print(ious[cur_idx])
                     raise ValueError
