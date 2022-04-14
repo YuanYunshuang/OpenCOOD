@@ -52,20 +52,19 @@ class Matcher(nn.Module):
             cur_cluster_id = 1
             while torch.any(cluster_indices == 0):
                 cur_idx = torch.where(cluster_indices == 0)[0][0] # find the idx of the first pred which is not assigned yet
-                if ious[cur_idx, cur_idx]<0.99:
-                    print(cur_idx)
-                    print(ious.shape)
-                    print(pred_boxes_cat[cur_idx])
-                    print(ious[cur_idx])
-                    raise ValueError
+                # if ious[cur_idx, cur_idx]<0.99:
+                #     print(cur_idx)
+                #     print(ious.shape)
+                #     print(pred_boxes_cat[cur_idx])
+                #     print(ious[cur_idx])
+                #     raise ValueError
                 cluster_indices[torch.where(ious[cur_idx] > 0.1)[0]] = cur_cluster_id
                 cur_cluster_id += 1
-                print(cur_cluster_id)
             clusters = []
             scores = []
-            for i in range(1, cluster_indices.max().item() + 1):
-                clusters.append(pred_boxes_cat[cluster_indices==i])
-                scores.append(pred_scores_cat[cluster_indices==i])
+            for j in range(1, cluster_indices.max().item() + 1):
+                clusters.append(pred_boxes_cat[cluster_indices==j])
+                scores.append(pred_scores_cat[cluster_indices==j])
             clusters_batch.append(clusters)
             scores_batch.append(scores)
 
