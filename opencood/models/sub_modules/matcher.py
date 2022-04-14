@@ -51,6 +51,7 @@ class Matcher(nn.Module):
             cluster_indices = torch.zeros(len(ious)).int() # gt assignments of preds
             cur_cluster_id = 1
             while torch.any(cluster_indices == 0):
+                print("{:d} boxes not assigned".format((cluster_indices==0).sum()))
                 cur_idx = torch.where(cluster_indices == 0)[0][0] # find the idx of the first pred which is not assigned yet
                 cluster_indices[torch.where(ious[cur_idx] > 0.1)[0]] = cur_cluster_id
                 cur_cluster_id += 1
