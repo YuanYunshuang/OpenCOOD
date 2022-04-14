@@ -148,6 +148,8 @@ class FpvrcnnPostprocessor(VoxelPostprocessor):
         # predicted 3d bbx
         pred_box3d_tensor = torch.cat(pred_box3d_list)
         pred_box3d_original = torch.cat(pred_box3d_original_list)
+        assert torch.logical_and((pred_box3d_original[:, 3:6] > 1).all(dim=1),
+                                 (pred_box3d_original[:, 3:6] < 10).all(dim=1)).sum() == len(pred_box3d_original), 'pred_box3d_original'
 
         cur_idx = 0
         batch_pred_boxes3d = []
