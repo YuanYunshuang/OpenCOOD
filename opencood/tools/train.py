@@ -90,7 +90,6 @@ def main():
         for param_group in optimizer.param_groups:
             print('learning rate %f' % param_group["lr"])
         for i, batch_data in enumerate(train_loader):
-            print(i)
             # the model will be evaluation mode during validation
             model.train()
             model.zero_grad()
@@ -105,16 +104,13 @@ def main():
             # becomes a list, which containing all data from other cavs
             # as well
             ouput_dict = model(batch_data['ego'])
-            # print('forward done.')
             # first argument is always your output dictionary,
             # second argument is always your label dictionary.
             final_loss = criterion(ouput_dict, batch_data['ego']['label_dict'])
-            # print('loss calculation done.')
             criterion.logging(epoch, i, len(train_loader), writer)
 
             # back-propagation
             final_loss.backward()
-            # print('backward done.')
             optimizer.step()
 
         if epoch % hypes['train_params']['eval_freq'] == 0:
