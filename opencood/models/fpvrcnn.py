@@ -38,21 +38,22 @@ class FPVRCNN(nn.Module):
         batch_dict = self.map_to_bev(batch_dict)
         out = self.ssfa(batch_dict['processed_lidar']['spatial_features'])
         batch_dict['preds_dict_stage1'] = self.head(out)
-        print('stage1-output')
+        # print('stage1-output')
         data_dict, output_dict = {}, {}
         data_dict['ego'], output_dict['ego'] = batch_dict, batch_dict
         # The data structure is a little confusing, same data pointer is passed two times,
         # because it should match the format of the main framwork
         pred_box3d_list, scores_list = self.post_processor.post_process(data_dict, output_dict, stage1=True)
-        print('stage1-postprocess')
+        # print('stage1-postprocess')
         batch_dict['det_boxes'] = pred_box3d_list
         batch_dict['det_scores'] = scores_list
         if pred_box3d_list is not None:
             batch_dict = self.vsa(batch_dict)
+            print('stage2-vsa')
             batch_dict = self.matcher(batch_dict)
+            print('stage2-matcher')
             batch_dict = self.roi_head(batch_dict)
-        print('stage2-output')
-
+            print('stage2-roi_head')
         return batch_dict
 
 
