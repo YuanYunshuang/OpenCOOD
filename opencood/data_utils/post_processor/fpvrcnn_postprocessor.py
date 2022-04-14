@@ -142,12 +142,12 @@ class FpvrcnnPostprocessor(VoxelPostprocessor):
         if len(pred_box2d_list) ==0 or len(pred_box3d_list) == 0:
             return None, None
         # shape: (N, 5)
-        pred_box2d_list = torch.vstack(pred_box2d_list)
+        pred_box2d_list = torch.cat(pred_box2d_list)
         # scores
         scores = pred_box2d_list[:, -1]
         # predicted 3d bbx
-        pred_box3d_tensor = torch.vstack(pred_box3d_list)
-        pred_box3d_original = torch.vstack(pred_box3d_original_list)
+        pred_box3d_tensor = torch.cat(pred_box3d_list)
+        pred_box3d_original = torch.cat(pred_box3d_original_list)
 
         cur_idx = 0
         batch_pred_boxes3d = []
