@@ -143,9 +143,8 @@ class RoIHead(nn.Module):
             ).view(-1, gt_of_rois.shape[-1])
 
             # flip orientation if rois have opposite orientation
-            heading_label = (gt_of_rois[:, 6] + (torch.div(torch.abs(gt_of_rois[:, 6].min()),
-                                                           (2 * np.pi), rounding_mode='trunc')
-                                                 + 1) * 2 * np.pi) % (2 * np.pi)  # 0 ~ 2pi
+            heading_label = (gt_of_rois[:, 6] + (torch.abs(gt_of_rois[:, 6].min()) //
+                                                 (2 * np.pi) + 1) * 2 * np.pi) % (2 * np.pi)  # 0 ~ 2pi
             opposite_flag = (heading_label > np.pi * 0.5) & (heading_label < np.pi * 1.5)
             heading_label[opposite_flag] = (heading_label[opposite_flag] + np.pi) % (2 * np.pi)  # (0 ~ pi/2, 3pi/2 ~ 2pi)
             flag = heading_label > np.pi
