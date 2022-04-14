@@ -52,7 +52,10 @@ class Matcher(nn.Module):
             cur_cluster_id = 1
             while torch.any(cluster_indices == 0):
                 cur_idx = torch.where(cluster_indices == 0)[0][0] # find the idx of the first pred which is not assigned yet
-                print(ious[cur_idx, cur_idx])
+                if ious[cur_idx, cur_idx]!=1:
+                    print(pred_boxes_cat.shape())
+                    print(pred_boxes_cat)
+                    print(ious)
                 cluster_indices[torch.where(ious[cur_idx] > 0.1)[0]] = cur_cluster_id
                 cur_cluster_id += 1
                 print(cur_cluster_id)
