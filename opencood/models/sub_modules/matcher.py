@@ -46,8 +46,6 @@ class Matcher(nn.Module):
             pred_boxes_cat = torch.cat(cur_boxes_list, dim=0)
             pred_boxes_cat[:, -1] = limit_period(pred_boxes_cat[:, -1])
             pred_scores_cat = torch.cat(cur_scores_list, dim=0)
-            assert torch.logical_and((pred_boxes_cat[:, 3:6] > 1).all(dim=1),
-                                     (pred_boxes_cat[:, 3:6] < 10).all(dim=1)).sum() == len(pred_boxes_cat)
 
             ious = boxes_iou3d_gpu(pred_boxes_cat, pred_boxes_cat)
             cluster_indices = torch.zeros(len(ious)).int() # gt assignments of preds
