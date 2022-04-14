@@ -101,29 +101,30 @@ class FpvrcnnPostprocessor(VoxelPostprocessor):
                 top_labels = (boxes3d[..., -1] > 0) ^ (dir_labels.byte() == 1)
                 boxes3d[..., -1] += torch.where(top_labels, torch.tensor(np.pi).type_as(boxes3d),
                                                   torch.tensor(0.0).type_as(boxes3d))
-                pred_box3d_original_list.append(boxes3d.detach())
 
-            # filter invalid boxes
-            keep_idx = torch.logical_and((boxes3d[:, 3:6] > 1).all(dim=1), (boxes3d[:, 3:6] < 10).all(dim=1))
-            idx_start = 0
-            count = []
-            for i, n in enumerate(batch_num_box_count):
-                count.append(int(keep_idx[idx_start:idx_start+n].sum()))
-            batch_num_box_count = count
-            boxes3d = boxes3d[keep_idx]
-            scores = scores[keep_idx]
-
-            # if the number of boxes is too huge, this would consume a lot of memory in the second stage
-            # therefore, randomly select some boxes if the box number is too big at the beginning of the training
-            if len(boxes3d) > 300:
-                keep_idx = torch.multinomial(scores, 300)
+                # filter invalid boxes
+                keep_idx = torch.logical_and((boxes3d[:, 3:6] > 1).all(dim=1), (boxes3d[:, 3:6] < 10).all(dim=1))
                 idx_start = 0
                 count = []
                 for i, n in enumerate(batch_num_box_count):
-                    count.append(int(torch.logical_and(keep_idx>=idx_start, keep_idx<idx_start + n).sum()))
+                    count.append(int(keep_idx[idx_start:idx_start+n].sum()))
                 batch_num_box_count = count
                 boxes3d = boxes3d[keep_idx]
                 scores = scores[keep_idx]
+
+                # if the number of boxes is too huge, this would consume a lot of memory in the second stage
+                # therefore, randomly select some boxes if the box number is too big at the beginning of the training
+                if len(boxes3d) > 300:
+                    keep_idx = torch.multinomial(scores, 300)
+                    idx_start = 0
+                    count = []
+                    for i, n in enumerate(batch_num_box_count):
+                        count.append(int(torch.logical_and(keep_idx>=idx_start, keep_idx<idx_start + n).sum()))
+                    batch_num_box_count = count
+                    boxes3d = boxes3d[keep_idx]
+                    scores = scores[keep_idx]
+
+                pred_box3d_original_list.append(boxes3d.detach())
 
             # convert output to bounding box
             if len(boxes3d) != 0:
@@ -148,8 +149,8 @@ class FpvrcnnPostprocessor(VoxelPostprocessor):
         # predicted 3d bbx
         pred_box3d_tensor = torch.cat(pred_box3d_list)
         pred_box3d_original = torch.cat(pred_box3d_original_list)
-        assert torch.logical_and((pred_box3d_original[:, 3:6] > 1).all(dim=1),
-                                 (pred_box3d_original[:, 3:6] < 10).all(dim=1)).sum() == len(pred_box3d_original), 'pred_box3d_original'
+        # assert torch.logical_and((pred_box3d_original[:, 3:6] > 1).all(dim=1),
+        #                          (pred_box3d_original[:, 3:6] < 10).all(dim=1)).sum() == len(pred_box3d_original), 'pred_box3d_original'
 
         cur_idx = 0
         batch_pred_boxes3d = []
