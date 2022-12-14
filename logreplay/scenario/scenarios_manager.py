@@ -1,6 +1,8 @@
 import os
 from collections import OrderedDict
 
+import tqdm
+
 from opencood.hypes_yaml.yaml_utils import load_yaml
 from logreplay.scenario.scene_manager import SceneManager
 
@@ -30,6 +32,7 @@ class ScenariosManager:
         scenario_folders = sorted([os.path.join(root_dir, x)
                                    for x in os.listdir(root_dir) if
                                    os.path.isdir(os.path.join(root_dir, x))])
+        scenario_folders = ['/media/hdd/yuan/koko/data/OPV2V/test/2021_08_18_19_48_05']
         self.scenario_database = OrderedDict()
 
         # loop over all scenarios

@@ -3,6 +3,7 @@ import random
 import sys
 from collections import OrderedDict
 
+sys.path.append("/opt/carla-simulator/PythonAPI/carla/dist/carla-0.9.13-py3.7-linux-x86_64.egg")
 import carla
 import numpy as np
 
@@ -10,7 +11,7 @@ from logreplay.assets.utils import find_town, find_blue_print
 from logreplay.assets.presave_lib import bcolors
 from logreplay.map.map_manager import MapManager
 from logreplay.sensors.sensor_manager import SensorManager
-from opencood.hypes_yaml.yaml_utils import load_yaml
+from opencood.hypes_yaml.yaml_utils import load_yaml, save_yaml
 
 
 class SceneManager:
@@ -138,6 +139,8 @@ class SceneManager:
                                       self.scenario_params['map'],
                                       self.output_root,
                                       self.scene_name)
+        # get static vehicles
+        self.static_object_dumping()
 
     def tick(self):
         """
@@ -198,9 +201,78 @@ class SceneManager:
 
         # we dump data after tick() so the agent can retrieve the newest info
         self.sensor_dumping(cur_timestamp)
+        self.object_dumping()
         self.map_dumping()
 
         return True
+
+    def static_object_dumping(self):
+        static_vehicles = self.world.get_level_bbs(carla.CityObjectLabel.Vehicles)
+        vehicles = {} # only save large 4 wheel vehicles
+        cnt = 0
+        for bbx in static_vehicles:
+            if bbx.extent.x > 1.5:
+                vehicles[f'static{cnt}'] = {
+                    'angle': [bbx.rotation.roll,
+                              bbx.rotation.yaw,
+                              bbx.rotation.pitch],
+                    'center': [0, 0, 0],
+                    'extent': [bbx.extent.x, bbx.extent.y, bbx.extent.z],
+                    'location': [bbx.location.x,
+                                 bbx.location.y,
+                                 bbx.location.z]
+                }
+                cnt += 1
+        filename = os.path.join(self.output_root, 'static_vehicles.yaml')
+        save_yaml(vehicles, filename)
+
+    def object_dumping(self):
+        """
+        Dump object information into a yaml file
+        """
+        def tf2list(pose):
+            return [
+                    pose.location.x,
+                    pose.location.y,
+                    pose.location.z,
+                    pose.rotation.roll,
+                    pose.rotation.yaw,
+                    pose.rotation.pitch,
+                ]
+        vehicles = {}
+        cavs = {}
+        for k, v in self.veh_dict.items():
+            veh = self.world.get_actor(v['actor_id'])
+            bbx = veh.bounding_box
+            pose = veh.get_transform()
+            vehicles[int(k)] = {
+                'angle': [pose.rotation.roll,
+                          pose.rotation.yaw,
+                          pose.rotation.pitch],
+                'center': [bbx.location.x, bbx.location.y, bbx.location.z],
+                'extent': [bbx.extent.x, bbx.extent.y, bbx.extent.z],
+                'location': [pose.location.x,
+                             pose.location.y,
+                             pose.location.z]
+            }
+            if v.get('cav', False):
+                info = {}
+                lidar_sensor = v['sensor_manager'].sensor_list[0].sensor
+                lidar_pose = lidar_sensor.get_transform()
+                info['lidar_pose'] = tf2list(lidar_pose)
+                info['true_ego_pos'] = tf2list(pose)
+                cavs[k] = info
+        # save yaml files
+        for cav_id, info in cavs.items():
+            out_dict = {}
+            out_dict.update(info)
+            cur_vehicles = {k: v for k, v in vehicles.items() if k != cav_id}
+            out_dict['vehicles'] = cur_vehicles
+            out_file = os.path.join(
+                self.output_root,
+                cav_id, self.veh_dict[cav_id]['cur_count'] + '.yaml'
+                )
+            save_yaml(out_dict, out_file)
 
     def map_dumping(self):
         """
@@ -343,12 +415,14 @@ class SceneManager:
         self.veh_dict[veh_id]['cur_pose'] = transform
 
     def close(self):
+        self.map_manager.destroy()
+        self.sensor_destory()
         self.world.apply_settings(self.origin_settings)
         actor_list = self.world.get_actors()
         for actor in actor_list:
-            actor.destroy()
-        self.map_manager.destroy()
-        self.sensor_destory()
+            if actor.is_alive:
+                actor.destroy()
+
 
     def sensor_destory(self):
         for veh_id, veh_content in self.veh_dict.items():
@@ -362,6 +436,8 @@ class SceneManager:
         destroy_list = []
         for veh_id, veh_content in self.veh_dict.items():
             if veh_content['cur_count'] != cur_timestamp:
+                if veh_content.get('cav', False):
+                    print('d')
                 veh_content['actor'].destroy()
                 destroy_list.append(veh_id)
 

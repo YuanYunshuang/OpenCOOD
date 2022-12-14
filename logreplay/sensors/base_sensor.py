@@ -18,5 +18,6 @@ class BaseSensor:
         return None
 
     def destroy(self):
-        self.sensor.destroy()
+        if self.sensor.is_alive:
+            self.sensor.destroy()
         cv2.destroyAllWindows()

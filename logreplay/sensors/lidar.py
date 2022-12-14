@@ -11,7 +11,7 @@ import numpy as np
 from logreplay.sensors.base_sensor import BaseSensor
 
 
-class SemanticLidar(BaseSensor):
+class Lidar(BaseSensor):
     def __init__(self, agent_id, vehicle, world, config, global_position):
         super().__init__(agent_id, vehicle, world, config, global_position)
 
@@ -21,7 +21,7 @@ class SemanticLidar(BaseSensor):
         self.agent_id = agent_id
 
         blueprint = world.get_blueprint_library(). \
-            find('sensor.lidar.ray_cast_semantic')
+            find('sensor.lidar.ray_cast')
         # set attribute based on the configuration
         blueprint.set_attribute('upper_fov', str(config['upper_fov']))
         blueprint.set_attribute('lower_fov', str(config['lower_fov']))
@@ -37,8 +37,7 @@ class SemanticLidar(BaseSensor):
         relative_position = config['relative_pose']
         spawn_point = self.spawn_point_estimation(relative_position,
                                                   global_position)
-        self.name = 'semantic_lidar' + str(relative_position)
-        self.thresh = config['thresh']
+        self.name = 'lidar' + str(relative_position)
 
         if vehicle is not None:
             self.sensor = world.spawn_actor(
@@ -56,7 +55,7 @@ class SemanticLidar(BaseSensor):
 
         weak_self = weakref.ref(self)
         self.sensor.listen(
-            lambda event: SemanticLidar._on_data_event(
+            lambda event: Lidar._on_data_event(
                 weak_self, event))
 
     @staticmethod
@@ -66,59 +65,12 @@ class SemanticLidar(BaseSensor):
         if not self:
             return
 
-        # shape:(n, 6)
-        data = np.frombuffer(event.raw_data, dtype=np.dtype([
-            ('x', np.float32), ('y', np.float32), ('z', np.float32),
-            ('CosAngle', np.float32), ('ObjIdx', np.uint32),
-            ('ObjTag', np.uint32)]))
-
+        # retrieve the raw lidar data and reshape to (N, 4)
+        data = np.copy(np.frombuffer(event.raw_data, dtype=np.dtype('f4')))
         # (x, y, z, intensity)
-        points = np.array([data['x'], data['y'], data['z']]).T
-        obj_tag = np.array(data['ObjTag'])
-        obj_idx = np.array(data['ObjIdx'])
+        data = np.reshape(data, (int(data.shape[0] / 4), 4)).astype(np.float32)
 
-        attenuation = 0.004
-        noise_stddev = 0.02
-        dropoff_general_rate = 0.1
-        dropoff_intensity_limit = 0.7
-        dropoff_zero_intensity = 0.15
-
-        # general_drop
-        samples = np.random.random(len(points))
-        mask = samples > dropoff_general_rate
-        points, obj_tag, obj_idx = points[mask], obj_tag[mask], obj_idx[mask]
-
-        # cal intensity
-        dists = np.linalg.norm(points, axis=-1)
-        intensity = np.exp(- attenuation * dists)
-
-        # drop zero intensity
-        drop = intensity < 0.01
-        samples = np.random.random(len(points))
-        drop = np.logical_and(samples <= dropoff_zero_intensity, drop)
-        mask = np.logical_not(drop)
-        points, obj_tag, obj_idx = points[mask], obj_tag[mask], obj_idx[mask]
-        dists = dists[mask]
-
-        # add noise
-        noise = np.random.normal(0, noise_stddev, len(points))
-        azi = np.arctan2(points[:, 1], points[:, 0])
-        ele = np.arctan2(points[:, 2], np.linalg.norm(points[:, :2], axis=-1))
-        dists = dists + noise
-        z = np.sin(ele) * dists
-        d_xy = np.cos(ele) * dists
-        x = np.cos(azi) * d_xy
-        y = np.sin(azi) * d_xy
-        # x = points[:, 0]
-        # y = points[:, 1]
-        # z = points[:, 2]
-
-        self.points = np.stack([x, y, z], axis=-1)
-        self.obj_tag = obj_tag
-        self.obj_idx = obj_idx
-
-        self.data = np.stack([x, y, z, obj_tag.astype(np.float32)],
-                             axis=-1).astype(np.float32)
+        self.data = data
         self.frame = event.frame
         self.timestamp = event.timestamp
 
@@ -158,7 +110,7 @@ class SemanticLidar(BaseSensor):
                                             z=carla_location.z + 1.5)
             yaw = 180
         else:
-            carla_location = carla.Location(x=carla_location.x,
+            carla_location = carla.Location(x=carla_location.x - 0.5,
                                             y=carla_location.y,
                                             z=carla_location.z + 1.9)
             yaw = 0
@@ -169,35 +121,10 @@ class SemanticLidar(BaseSensor):
 
         return spawn_point
 
-    def tick(self):
-        while self.obj_idx is None or self.obj_tag is None or \
-                self.obj_idx.shape[0] != self.obj_tag.shape[0]:
-            continue
-
-        # label 10 is the vehicle
-        vehicle_idx = self.obj_idx[self.obj_tag == 10]
-        # each individual instance id
-        vehicle_unique_id = list(np.unique(vehicle_idx))
-        vehicle_id_filter = []
-
-        for veh_id in vehicle_unique_id:
-            if vehicle_idx[vehicle_idx == veh_id].shape[0] > self.thresh:
-                vehicle_id_filter.append(veh_id)
-
-        # these are the ids that are visible
-        return vehicle_id_filter
-
     def data_dump(self, output_root, cur_timestamp):
         # dump lidar
         output_file_name = os.path.join(output_root,
                                        cur_timestamp + f'_{self.name}.bin')
         data = getattr(self, 'data', None)
-        # waite data to prevent data stream error because of late coming data
-        while data is None:
-            data = getattr(self, 'data', None)
-        data.tofile(output_file_name)
-        # lidar data
-        self.points = None
-        self.obj_idx = None
-        self.obj_tag = None
-        self.data= None
+        if data is not None:
+            data.tofile(output_file_name)

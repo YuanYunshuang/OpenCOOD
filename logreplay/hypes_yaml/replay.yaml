@@ -1,27 +1,29 @@
-root_dir: '/home/runshengxu/project/OpenCOOD/opv2v_data_dumping/tmp'
-output_dir: '/home/runshengxu/project/OpenCOOD/opv2v_data_dumping/additional_bld/tmp'
+root_dir: '/media/hdd/yuan/koko/data/OPV2V/test'
+output_dir: '/media/hdd/yuan/koko/data/OPV2V/additional/test'
 map: # corresponding to bev map
   activate: true
-  visualize: true
+  visualize: false
+  use_lidar_center: true
 
   save_yml: false
   save_static: false
-  save_lane: true
+  save_lane: false
+  save_road_dynamic: false
   save_dynamic: false
-  save_bev_vis: true
-  save_bev_sem: true
+  save_bev_vis: false
+  save_bev_sem: false
 
   radius: 50 # meter
-  raster_size: [256, 256]
+  raster_size: [500, 500]
   lane_sample_resolution: 0.1
 
   static:
     draw_lane: true
-    draw_traffic_light: true
+    draw_traffic_light: false
     exclude_road: false
-    exclude_intersection_lane: true
-    z_filter_value: 6
-    other_objs: ['terrain', 'building', 'sidewalk'] # besides, lane and road, what other objects need to render
+    exclude_intersection_lane: false
+    z_filter_value: 8
+    other_objs: [] # besides, lane and road, what other objects need to render, 'terrain', 'building','sidewalk'
   dynamic:
     exclude_self: true
     exclude_off_road: true
@@ -29,7 +31,30 @@ map: # corresponding to bev map
     visibility_corp: false # whether save visibility mask that can be seen for all cavs. when set to true, semantic lidar has to be implemented
 
 sensor: # new attached sensor
-  sensor_list: []
+  sensor_list:
+    - name: 'semantic_lidar'
+      args:
+        upper_fov: 2
+        lower_fov: -25
+        channels: 64
+        rotation_frequency: 20
+        points_per_second: 1300000
+        range: 120
+        relative_pose: center
+        thresh: 5 # mininum number of points hit to be regarded as visible
+#    - name: 'lidar'
+#      args:
+#        channels: 64
+#        dropoff_general_rate: 0.1
+#        dropoff_intensity_limit: 0.7
+#        dropoff_zero_intensity: 0.15
+#        lower_fov: -25
+#        noise_stddev: 0.02
+#        points_per_second: 1300000
+#        range: 120
+#        rotation_frequency: 20
+#        upper_fov: 2
+#        relative_pose: center
 #    - name: 'semantic_lidar'
 #      args: &base_semantic_lidar
 #        upper_fov: 10

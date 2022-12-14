@@ -14,7 +14,8 @@ from enum import IntEnum
 
 LABEL_TO_CARLA = {'building': carla.CityObjectLabel.Buildings,
                   'terrain': carla.CityObjectLabel.Terrain,
-                  'sidewalk': carla.CityObjectLabel.Sidewalks}
+                  'sidewalk': carla.CityObjectLabel.Sidewalks,
+                  'roads': carla.CityObjectLabel.Roads}
 
 
 class InterpolationMethod(IntEnum):

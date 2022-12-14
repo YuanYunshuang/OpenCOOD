@@ -14,7 +14,7 @@ CV2_SUB_VALUES = {"shift": 9, "lineType": cv2.LINE_AA}
 CV2_SHIFT_VALUE = 2 ** CV2_SUB_VALUES["shift"]
 INTERPOLATION_POINTS = 20
 
-AGENT_COLOR = (255, 255, 255)
+AGENT_COLOR = (150, 150, 150)
 ROAD_COLOR = (255, 255, 255)
 ROAD_COLOR_VIS =  (17, 17, 31)
 Lane_COLOR = {'normal': (255, 217, 82),
@@ -27,6 +27,7 @@ SideWalk_COLOR = (244, 35, 232)
 # color map
 OBJ_COLOR_MAP = {'building': BUILD_COLOR,
                  'terrain': Terrain_COLOR,
+                 'roads': ROAD_COLOR,
                  'sidewalk': SideWalk_COLOR}
 
 
@@ -95,6 +96,16 @@ def draw_road(lane_area_list, image, visualize=False):
         cv2.fillPoly(image, [lane_area], color,
                      **CV2_SUB_VALUES)
     return image
+
+
+def fill_area_with_height(areas, bev_map, height=None):
+    for i, a in enumerate(areas):
+        a = a.reshape(-1, 2)
+        channel = 1 if height is not None and height[i] > 0.5 else 0
+        cur_map = np.array(bev_map[..., channel], copy=True)
+        cv2.fillPoly(cur_map, [a], 1, **CV2_SUB_VALUES)
+        bev_map[..., channel] = cur_map
+    return bev_map
 
 def road_exclude(static_road):
     """

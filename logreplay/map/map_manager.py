@@ -2,7 +2,7 @@
 
 """HDMap manager
 """
-
+import functools
 # Author: Runsheng Xu <rxx3386@ucla.edu>
 # License: TDG-Attribution-NonCommercial-NoDistrib
 
@@ -20,10 +20,11 @@ from logreplay.assets.presave_lib import EXCLUDE_ROAD_MAP, OR_Z_VALUE_MAP
 from logreplay.map.map_utils import \
     world_to_sensor, lateral_shift, list_loc2array, list_wpt2array, \
     convert_tl_status, exclude_off_road_agents, retrieve_city_object_info, \
-    obj_in_range
+    obj_in_range, x_to_world_transformation
 from logreplay.map.map_drawing import \
     cv2_subpixel, draw_agent, draw_road, \
-    draw_lane, road_exclude, draw_crosswalks, draw_city_objects
+    draw_lane, road_exclude, draw_crosswalks, \
+    draw_city_objects, fill_area_with_height
 from opencood.hypes_yaml.yaml_utils import save_yaml_wo_overwriting
 CV2_SUB_VALUES = {"shift": 9, "lineType": cv2.LINE_AA}
 
@@ -97,6 +98,7 @@ class MapManager(object):
     def __init__(self, world, config, output_root, scene_name):
         self.world = world
         self.carla_map = world.get_map()
+        self.use_lidar_center = config['use_lidar_center']
         self.center = None
         self.actor_id = None
         self.out_root = output_root
@@ -112,6 +114,7 @@ class MapManager(object):
         self.save_static = config['save_static']
         self.save_dynamic = config['save_dynamic']
         self.save_lane = config['save_lane']
+        self.save_road_dynamic = config['save_road_dynamic']
         self.save_bev_vis = config['save_bev_vis']
 
         # whether to visualize the bev map while running simulation
@@ -138,6 +141,16 @@ class MapManager(object):
         topology = [x[0] for x in self.carla_map.get_topology()]
         # sort by altitude
         self.topology = sorted(topology, key=lambda w: w.transform.location.z)
+        # generate local bev points
+        if self.save_road_dynamic:
+            x = np.linspace(
+                - config['radius'] + 0.5 * self.meter_per_pixel,
+                config['radius'], config['raster_size'][0]
+            )
+            bev_points = np.stack(np.meshgrid(x, x), axis=0)
+            bev_points = np.r_[bev_points, [np.zeros(bev_points.shape[1:]),
+                                            np.ones(bev_points.shape[1:])]]
+            self.bev_points = bev_points
 
         # basic elements in HDMap: lane, crosswalk and traffic light
         self.lane_info = {}
@@ -176,7 +189,16 @@ class MapManager(object):
         # visible agent id for all vehicles
         self.vis_corp_ids = []
 
+        self.xy_min, self.xy_max, self.z_max = self.get_global_bounds()
+
         # bev maps
+        if self.save_road_dynamic:
+            name = f"{self.carla_map.name.rsplit('/', 1)[-1]}.png"
+            self.bev_map_file = f'/media/hdd/yuan/OpenCOOD/logreplay/assets/maps/{name}'
+            if os.path.exists(self.bev_map_file):
+                self.bev_map = cv2.imread(self.bev_map_file)
+            else:
+                self.bev_map = self.draw_map()
         self.dynamic_bev = 255 * np.zeros(
             shape=(self.raster_size[1], self.raster_size[0], 3),
             dtype=np.uint8)
@@ -192,6 +214,9 @@ class MapManager(object):
         self.lane_bev = 255 * np.zeros(
             shape=(self.raster_size[1], self.raster_size[0], 3),
             dtype=np.uint8)
+        self.road_bev = np.zeros(
+            shape=(self.raster_size[1], self.raster_size[0]),
+            dtype=bool)
         self.vis_bev = 255 * np.ones(
             shape=(self.raster_size[1], self.raster_size[0], 3),
             dtype=np.uint8)
@@ -214,6 +239,8 @@ class MapManager(object):
 
         self.actor_id = cav_content['actor_id']
         self.center = cav_content['cur_pose']
+        # if self.use_lidar_center:
+        #     self.center.location.x -= 0.5
         self.agent_id = cav_id
         self.current_timstamp = cav_content['cur_count']
 
@@ -228,8 +255,12 @@ class MapManager(object):
             self.vis_corp_ids = self.check_visibility_corp(veh_dict,
                                                            self.vis_corp_ids)
 
-        self.rasterize_static()
-        self.rasterize_dynamic()
+        if self.save_static or self.visualize or self.save_road_dynamic:
+            self.rasterize_static()
+        if self.save_dynamic or self.visualize or self.save_road_dynamic:
+            self.rasterize_dynamic()
+        if self.save_road_dynamic:
+            self.rasterize_road()
 
         if self.exclude_off_road:
             self.dynamic_bev = exclude_off_road_agents(self.static_bev,
@@ -423,7 +454,7 @@ class MapManager(object):
             'raster_size_pixel': self.raster_size,
             'radius_meter': self.radius_meter,
             'pixel_per_meter': self.pixels_per_meter,
-            'topology': self.valid_lane_info
+            'topology': getattr(self, 'valid_lane_info', [])
         }}
         if self.save_yml:
             # save metadata
@@ -434,10 +465,21 @@ class MapManager(object):
 
         if self.save_static:
             # save rgb image
-            save_static_name = os.path.join(save_name,
+            save_road_name = os.path.join(save_name,
+                                          self.current_timstamp +
+                                          '_bev_static.png')
+            cv2.imwrite(save_road_name, self.road_bev.astype(np.uint8) * 255)
+        if self.save_road_dynamic:
+            # save binary image
+            save_road_name = os.path.join(save_name,
                                             self.current_timstamp +
-                                            '_bev_static.png')
-            cv2.imwrite(save_static_name, self.static_bev)
+                                            '_bev_road.png')
+            road_dynamic = 255 * np.zeros(shape=(self.raster_size[1],
+                                                 self.raster_size[0], 3),
+                                          dtype=np.uint8)
+            road_dynamic[..., 0] = self.road_bev.astype(np.uint8) * 255
+            road_dynamic[..., 1] = self.dynamic_bev[..., 0]
+            cv2.imwrite(save_road_name, road_dynamic)
 
         if self.save_lane:
             # save lane topology seg
@@ -474,6 +516,31 @@ class MapManager(object):
                                          '_bev_vis.png')
             cv2.imwrite(save_vis_name, self.vis_bev)
 
+    def get_all_waypoints(self):
+        """Get waypoints of all lane types"""
+        waypoints = self.carla_map.generate_waypoints(0.5)
+        extended_waypoints = []
+        for shift in np.linspace(-5, 5, 11):
+            # if shift == 0:
+            #     continue
+            lateral_points = [lateral_shift(w.transform, shift * 0.5) for
+                                w in waypoints]
+            fn = functools.partial(self.carla_map.get_waypoint,
+                                   project_to_road=True,
+                                   lane_type=carla.LaneType.Any)
+            lateral_wpts = list(map(fn, lateral_points))
+            extended_waypoints.extend(lateral_wpts)
+        lane_non_driving = np.array(list(map(lambda x:
+                                             x.lane_type.__str__() != "Driving",
+                                             extended_waypoints)))
+        locations = np.array(list(map(lambda x: [x.transform.location.x,
+                             x.transform.location.y,
+                             x.transform.location.z], extended_waypoints)))
+        _, uniq_idx = np.unique(locations[lane_non_driving], axis=0, return_index=True)
+        non_driving_idx = np.where(lane_non_driving)[0][uniq_idx]
+        extended_waypoints = np.asarray(extended_waypoints)[non_driving_idx].tolist()
+        return waypoints + extended_waypoints
+
     def generate_lane_cross_info(self):
         """
         From the topology generate all lane and crosswalk
@@ -489,6 +556,18 @@ class MapManager(object):
 
         # for crosswalk information
         crosswalks_list = self.split_cross_walks()
+
+        # import matplotlib.pyplot as plt
+        # fig = plt.figure()
+        # ax = fig.add_subplot()
+        # for crosswalk in crosswalks_list:
+        #     cross_marking = np.array(crosswalk)
+        #     cross_marking = np.concatenate([cross_marking, cross_marking[:1]])
+        #     plt.plot(cross_marking[:, 0], cross_marking[:, 1])
+        # ax.axis('equal')
+        # plt.show()
+        # plt.close()
+
         for (i, crosswalk) in enumerate(crosswalks_list):
             crosswalk_id = uuid.uuid4().hex[:6].upper()
             crosswalks_ids.append(crosswalk_id)
@@ -528,19 +607,17 @@ class MapManager(object):
                 waypoints.append(nxt)
                 nxt = nxt.next(self.lane_sample_resolution)[0]
 
-            # waypoint is the centerline, we need to calculate left lane mark
-            left_marking = [lateral_shift(w.transform, -w.lane_width * 0.5) for
-                            w in waypoints]
-            right_marking = [lateral_shift(w.transform, w.lane_width * 0.5) for
-                             w in waypoints]
-            # convert the list of carla.Location to np.array
-            left_marking = list_loc2array(left_marking)
-            right_marking = list_loc2array(right_marking)
-            mid_lane = list_wpt2array(waypoints)
-
-            # get boundary information
-            bound = self.get_bounds(left_marking, right_marking)
+            left_marking, right_marking, mid_lane, bound = \
+            self.get_lane_bdry_info(waypoints)
             lanes_bounds = np.append(lanes_bounds, bound, axis=0)
+
+            # # get the neighbouring left and right shoulder lane
+            # left_lane_points = [lateral_shift(w.transform, -w.lane_width * 0.5 - 0.5)
+            #                     for w in waypoints]
+            # right_lane_points = [lateral_shift(w.transform, w.lane_width * 0.5 + 0.5)
+            #                      for w in waypoints]
+            # left_lane_info = self.find_nearst_lane(left_lane_points)
+            # right_lane_info = self.find_nearst_lane(right_lane_points)
 
             # associate with traffic light
             tl_id = self.associate_lane_tl(mid_lane)
@@ -548,12 +625,59 @@ class MapManager(object):
             self.lane_info.update({lane_id: {'xyz_left': left_marking,
                                              'xyz_right': right_marking,
                                              'xyz_mid': mid_lane,
+                                             # 'left_lane': left_lane_info,
+                                             # 'right_lane': right_lane_info,
                                              'tl_id': tl_id,
                                              'intersection_flag':
                                                  intersection_flag}})
         # boundary information
         self.bound_info['lanes']['ids'] = lanes_id
         self.bound_info['lanes']['bounds'] = lanes_bounds
+
+    def get_lane_bdry_info(self, waypoints):
+        # waypoint is the centerline, we need to calculate left lane mark
+        left_marking = [lateral_shift(w.transform, -w.lane_width * 0.5) for
+                        w in waypoints]
+        right_marking = [lateral_shift(w.transform, w.lane_width * 0.5) for
+                         w in waypoints]
+        # convert the list of carla.Location to np.array
+        left_marking = list_loc2array(left_marking)
+        right_marking = list_loc2array(right_marking)
+        mid_lane = list_wpt2array(waypoints)
+        # get boundary information
+        bound = self.get_bounds(left_marking, right_marking)
+
+        return left_marking, right_marking, mid_lane, bound
+
+    def get_global_bounds(self):
+        bounds = np.concatenate([
+            self.bound_info['lanes']['bounds'],
+            self.bound_info['crosswalks']['bounds']
+        ], axis=0)
+        xy_min = np.min(bounds[:, 0, :], axis=0) - 20
+        xy_max = np.max(bounds[:, 1, :], axis=0) + 20
+        z_max = np.max(bounds[:, 2, 1])
+        return xy_min, xy_max, z_max
+
+    def find_nearst_lane(self, points):
+        fn = functools.partial(self.carla_map.get_waypoint,
+                               project_to_road=True,
+                               lane_type=carla.LaneType.Any)
+        wpts = list(map(fn, points))
+        # lane_type = np.array(list(map(lambda x: x.lane_type.__str__(), wpts)))
+        lane_type = wpts[0].lane_type.__str__()
+        lane_info = None
+        if lane_type != "Driving":
+            l_marking, r_marking, mid_lane, bound = \
+                self.get_lane_bdry_info(wpts)
+            lane_info = {
+                'lane_type': lane_type,
+                'xyz_left': l_marking,
+                'xyz_right': r_marking,
+                'xyz_mid': mid_lane,
+                'lane_bounds': bound
+            }
+        return lane_info
 
     def split_cross_walks(self):
         """
@@ -711,6 +835,74 @@ class MapManager(object):
         lane_area = cv2_subpixel(lane_area)
 
         return lane_area
+
+    def generate_lane_area_global(self, xyz_left, xyz_right):
+        """
+        Generate the lane area poly under rasterization map's center
+        coordinate frame.
+
+        Parameters
+        ----------
+        xyz_left : np.ndarray
+            Left lanemarking of a lane, shape: (n, 3).
+        xyz_right : np.ndarray
+            Right lanemarking of a lane, shape: (n, 3).
+
+        Returns
+        -------
+        lane_area : np.ndarray
+            Combine left and right lane together to form a polygon.
+        """
+        lane_area = np.zeros((2, xyz_left.shape[0], 2))
+
+        # to image coordinate frame
+        lane_area[0] = xyz_left[:, :2]
+        lane_area[1] = xyz_right[::-1, :2]
+        # switch x and y
+        lane_area = lane_area[..., ::-1]
+        # # y revert
+        # lane_area[:, :, 1] = -lane_area[:, :, 1]
+
+        lane_area[:, :, :2] = (lane_area[:, :, :2] - self.xy_min[[1, 0]].reshape(1, 2)) \
+                              * self.pixels_per_meter
+        lane_height = np.concatenate([xyz_left, xyz_right], axis=0)[:, 2].mean()
+        # to make more precise polygon
+        lane_area = cv2_subpixel(lane_area)
+
+        return lane_area, lane_height
+
+    def generate_cross_area_global(self, xyz):
+        """
+        Generate the cross lane area under global rasterized map
+
+        Parameters
+        ----------
+        xyz : np.ndarray
+            Crosswalk lane marking, shape: (n, 3).
+        Returns
+        -------
+        lane_area : np.ndarray
+            Combine up and down line together.
+        """
+        if xyz.shape[0] == 2:
+            print('dman')
+        lane_area = np.zeros((2, xyz.shape[0] // 2, 2))
+
+        # to image coordinate frame
+        lane_area[0] = xyz[:xyz.shape[0] // 2, :2]
+        lane_area[1] = xyz[xyz.shape[0] // 2:, :2]
+        # switch x and y
+        lane_area = lane_area[..., ::-1]
+        # # y revert
+        # lane_area[:, :, 1] = -lane_area[:, :, 1]
+
+        lane_area[:, :, :2] = (lane_area[:, :, :2] - self.xy_min[[1, 0]].reshape(1, 2)) \
+                              * self.pixels_per_meter
+        lane_height = xyz[:, 2].mean()
+        # to make more precise polygon
+        lane_area = cv2_subpixel(lane_area)
+
+        return lane_area, lane_height
 
     def generate_agent_area(self, corners):
         """
@@ -871,9 +1063,11 @@ class MapManager(object):
 
         # --------- Retrieve road topology related first ---------- #
         lanes_area_list = []
+        lanes_height_list = []
         cross_area_list = []
         lane_type_list = []
         intersection_list = []
+        cur_lane_heights = []
 
         for idx, cross_idx in enumerate(cross_indices):
             cross_idx = self.bound_info['crosswalks']['ids'][cross_idx]
@@ -891,6 +1085,7 @@ class MapManager(object):
 
             xyz_left, xyz_right = \
                 lane_info['xyz_left'], lane_info['xyz_right']
+            cur_lane_heights.append(lane_info['xyz_mid'][:, 2])
 
             # generate lane area
             lane_area = self.generate_lane_area(xyz_left, xyz_right)
@@ -907,7 +1102,10 @@ class MapManager(object):
                 lane_type_list.append(status)
             else:
                 lane_type_list.append('normal')
-
+        if len(cur_lane_heights) > 0:
+            self.cur_lane_heights = np.concatenate(cur_lane_heights, axis=0)
+        else:
+            self.cur_lane_heights = None
         self.static_bev = draw_road(lanes_area_list,
                                     self.static_bev)
         if self.exclude_road:
@@ -941,5 +1139,130 @@ class MapManager(object):
         self.vis_bev = draw_crosswalks(cross_area_list, self.vis_bev)
         self.vis_bev = cv2.cvtColor(self.vis_bev, cv2.COLOR_RGB2BGR)
 
+    def rasterize_road(self):
+        # ks = int(self.pixels_per_meter * 10)
+        # kernel = np.ones((ks, ks), np.uint8)
+        # static_bev = self.static_bev[..., 0].astype(bool).astype(float)
+        # bev_static_ext = cv2.dilate(static_bev, kernel=kernel, iterations=1)
+        # mask_ext = (bev_static_ext - static_bev).astype(bool)
+        # x, y = np.where(mask_ext)
+        # points = self.bev_points[y, -x]
+        points = self.bev_points.reshape(4, -1)
+        sensor_world_matrix = x_to_world_transformation(self.center)
+        cords = np.dot(sensor_world_matrix, points).T
+        sx, sy, _ = self.bev_map.shape
+
+        xs = np.floor((cords[:, 0] - self.xy_min[0]) * self.pixels_per_meter).astype(int)
+        ys = np.floor((cords[:, 1] - self.xy_min[1]) * self.pixels_per_meter).astype(int)
+        xs = np.maximum(np.minimum(xs, sx - 1), 0)
+        ys = np.maximum(np.minimum(ys, sy - 1), 0)
+        hs = np.array([self.center.location.z]) \
+            if self.cur_lane_heights is None else self.cur_lane_heights
+        if hs.min() > 0.5:
+            road_mask = self.bev_map[xs, ys, 1]
+        elif hs.max() < 0.5:
+            road_mask = self.bev_map[xs, ys, 0]
+        else:
+            road_mask = np.any(self.bev_map[xs, ys], axis=-1).astype(float)
+
+        road_bev = road_mask.reshape(self.static_bev[..., 0].shape)[:, ::-1].T
+        road_bev = cv2.morphologyEx(road_bev, cv2.MORPH_CLOSE,
+                                      kernel=np.ones((3, 3), np.uint8))
+
+        self.road_bev = road_bev.astype(bool)
+
+    def draw_map(self):
+        cross_indices = self.bound_info['crosswalks']['ids']
+        lane_indices = self.bound_info['lanes']['ids']
+
+        size = np.ceil((self.xy_max - self.xy_min)
+                       * self.pixels_per_meter).astype(int)
+        bev_map = np.zeros((size[0], size[1], 3))
+
+        lanes_area_list = []
+        lanes_height_list = []
+        cross_area_list = []
+        cross_height_list = []
+        lane_type_list = []
+        intersection_list = []
+
+        for idx, cross_idx in enumerate(cross_indices):
+            cross_info = self.crosswalk_info[cross_idx]
+
+            cross_area, cross_height = \
+                self.generate_cross_area_global(cross_info['xyz'])
+            cross_area_list.append(cross_area)
+            cross_height_list.append(cross_height)
+
+        for idx, lane_idx in enumerate(lane_indices):
+            lane_info = self.lane_info[lane_idx]
+
+            # save the topology info for this cav
+            self.valid_lane_info = lane_info
+
+            xyz_left, xyz_right = \
+                lane_info['xyz_left'], lane_info['xyz_right']
+
+            # generate lane area
+            lane_area, lane_height = \
+                self.generate_lane_area_global(xyz_left, xyz_right)
+            lanes_area_list.append(lane_area)
+            lanes_height_list.append(lane_height)
+
+            # intersection flag
+            intersection_list.append(lane_info['intersection_flag'])
+
+            # check the associated traffic light
+            associated_tl_id = lane_info['tl_id']
+            if associated_tl_id and self.draw_traffic_light:
+                tl_actor = self.traffic_light_info[associated_tl_id]['actor']
+                status = convert_tl_status(tl_actor.get_state())
+                lane_type_list.append(status)
+            else:
+                lane_type_list.append('normal')
+
+        bev_map = fill_area_with_height(lanes_area_list, bev_map, lanes_height_list)
+        # bev_map = fill_area_with_height(cross_area_list, bev_map, cross_height_list)
+        bev_map = self.extend_bev_map(bev_map)
+        cv2.imwrite(self.bev_map_file, bev_map * 255)
+        return bev_map
+
+    def extend_bev_map(self, bevmap):
+        bevmap[..., 0] = self.masked_ground_projection(bevmap[..., 0])
+        if self.z_max > 0.5:
+            bevmap[..., 1] = self.masked_ground_projection(bevmap[..., 1],
+                                                           z=self.z_max + 0.5)
+        return bevmap
+
+    def masked_ground_projection(self, bevmap_mask, z=0.5):
+        ks = int(self.pixels_per_meter * 10)
+        kernel = np.ones((ks, ks), np.uint8)
+        bev_ext = cv2.dilate(bevmap_mask, kernel=kernel, iterations=1)
+        mask_ext = (bev_ext - bevmap_mask).astype(bool)
+        xis, yis = np.where(mask_ext)
+
+        xs = xis * self.meter_per_pixel + self.xy_min[0]
+        ys = yis * self.meter_per_pixel + self.xy_min[1]
+        locs = list(map(
+            lambda x, y: carla.Location(x, y, z),
+            xs, ys
+        ))
+        labels = list(map(self.world.ground_projection,
+                          locs, np.ones(len(locs)) * z))
+
+        road_mask = np.array(list(map(self.is_road, labels))).astype(float)
+        bevmap_mask[mask_ext] = road_mask
+        bevmap_mask = cv2.morphologyEx(bevmap_mask, cv2.MORPH_CLOSE,
+                                          kernel=np.ones((3, 3), np.uint8))
+        return bevmap_mask
+
+    @staticmethod
+    def is_road(lbls):
+        if lbls is not None:
+            return lbls.label.__str__() in ['Roads', 'RoadLines', 'Vehicles']
+        else:
+            return True
+
     def destroy(self):
         cv2.destroyAllWindows()
+
