@@ -32,7 +32,7 @@ class ScenariosManager:
         scenario_folders = sorted([os.path.join(root_dir, x)
                                    for x in os.listdir(root_dir) if
                                    os.path.isdir(os.path.join(root_dir, x))])
-        scenario_folders = ['/media/hdd/yuan/koko/data/OPV2V/test/2021_08_18_19_48_05']
+        scenario_folders = ['/koko/OPV2V/temporal/test/2021_08_18_19_48_05']
         self.scenario_database = OrderedDict()
 
         # loop over all scenarios
@@ -59,22 +59,30 @@ class ScenariosManager:
         Tick for every scene manager to do the log replay.
         """
         for scene_name, scene_content in self.scenario_database.items():
-            print('log replay %s' % scene_name)
             scene_manager = scene_content['scene_manager']
             run_flag = True
 
             scene_manager.start_simulator()
 
-            while run_flag:
-                run_flag = scene_manager.tick()
+            with tqdm.tqdm(total=len(scene_manager.timestamps), leave=True, desc=scene_name) as pbar:
+                while run_flag:
+                    run_flag = scene_manager.tick()
+                    pbar.update(1)
 
             scene_manager.close()
+
+    def interpolate_scenes(self):
+        for scene_name, scene_content in self.scenario_database.items():
+            print('log replay %s' % scene_name)
+            scene_manager = scene_content['scene_manager']
+            scene_manager.interpolate()
 
 
 if __name__ == '__main__':
     from opencood.hypes_yaml.yaml_utils import load_yaml
     scene_params = load_yaml('../hypes_yaml/replay.yaml')
     scenarion_manager = ScenariosManager(scenario_params=scene_params)
+    # scenarion_manager.interpolate_scenes()
     scenarion_manager.tick()
     print('test passed')
 

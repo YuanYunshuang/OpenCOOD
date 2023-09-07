@@ -8,6 +8,7 @@ import carla
 import cv2
 import os
 import numpy as np
+from plyfile import PlyData, PlyElement
 from logreplay.sensors.base_sensor import BaseSensor
 
 
@@ -50,6 +51,7 @@ class SemanticLidar(BaseSensor):
         self.points = None
         self.obj_idx = None
         self.obj_tag = None
+        self.ring = None
 
         self.timestamp = None
         self.frame = 0
@@ -58,6 +60,9 @@ class SemanticLidar(BaseSensor):
         self.sensor.listen(
             lambda event: SemanticLidar._on_data_event(
                 weak_self, event))
+
+        self.fields = {'x': 'f4', 'y': 'f4', 'z': 'f4', 'ObjIdx': 'u4', 'ObjTag': 'u4', 'ring': 'u1'}
+        self.np_types = {'f4': np.float32, 'u4': np.uint32, 'u1': np.uint8}
 
     @staticmethod
     def _on_data_event(weak_self, event):
@@ -76,6 +81,10 @@ class SemanticLidar(BaseSensor):
         points = np.array([data['x'], data['y'], data['z']]).T
         obj_tag = np.array(data['ObjTag'])
         obj_idx = np.array(data['ObjIdx'])
+        ring = []
+        for i in range(event.channels):
+            ring.append(np.ones(event.get_point_count(i)) * i)
+        ring = np.concatenate(ring).astype(np.uint8)
 
         attenuation = 0.004
         noise_stddev = 0.02
@@ -86,7 +95,7 @@ class SemanticLidar(BaseSensor):
         # general_drop
         samples = np.random.random(len(points))
         mask = samples > dropoff_general_rate
-        points, obj_tag, obj_idx = points[mask], obj_tag[mask], obj_idx[mask]
+        points, obj_tag, obj_idx, ring = points[mask], obj_tag[mask], obj_idx[mask], ring[mask]
 
         # cal intensity
         dists = np.linalg.norm(points, axis=-1)
@@ -97,7 +106,7 @@ class SemanticLidar(BaseSensor):
         samples = np.random.random(len(points))
         drop = np.logical_and(samples <= dropoff_zero_intensity, drop)
         mask = np.logical_not(drop)
-        points, obj_tag, obj_idx = points[mask], obj_tag[mask], obj_idx[mask]
+        points, obj_tag, obj_idx, ring = points[mask], obj_tag[mask], obj_idx[mask], ring[mask]
         dists = dists[mask]
 
         # add noise
@@ -116,6 +125,7 @@ class SemanticLidar(BaseSensor):
         self.points = np.stack([x, y, z], axis=-1)
         self.obj_tag = obj_tag
         self.obj_idx = obj_idx
+        self.ring = ring
 
         self.data = np.stack([x, y, z, obj_tag.astype(np.float32)],
                              axis=-1).astype(np.float32)
@@ -187,15 +197,30 @@ class SemanticLidar(BaseSensor):
         # these are the ids that are visible
         return vehicle_id_filter
 
-    def data_dump(self, output_root, cur_timestamp):
+    def data_dump(self, output_root, cur_timestamp, ext='.ply'):
         # dump lidar
         output_file_name = os.path.join(output_root,
-                                       cur_timestamp + f'_{self.name}.bin')
-        data = getattr(self, 'data', None)
-        # waite data to prevent data stream error because of late coming data
-        while data is None:
+                                       cur_timestamp + ext)
+        if ext == '.bin':
             data = getattr(self, 'data', None)
-        data.tofile(output_file_name)
+            # waite data to prevent data stream error because of late coming data
+            while data is None:
+                data = getattr(self, 'data', None)
+            data.tofile(output_file_name)
+        else:
+            data = {
+                'x': self.points[:, 0].astype(self.np_types[self.fields['x']]),
+                'y': self.points[:, 1].astype(self.np_types[self.fields['y']]),
+                'z': self.points[:, 2].astype(self.np_types[self.fields['z']]),
+                'ObjIdx': self.obj_idx.astype(self.np_types[self.fields['ObjIdx']]),
+                'ObjTag': self.obj_tag.astype(self.np_types[self.fields['ObjTag']]),
+                'ring': self.ring.astype(self.np_types[self.fields['ring']])
+            }
+            vertex_data = list(zip(*[data[k] for k, v in self.fields.items()]))
+            vertex_type = [(k, v) for k, v in self.fields.items()]
+            vertex = np.array(vertex_data, dtype=vertex_type)
+            el = PlyElement.describe(vertex, 'vertex')
+            PlyData([el]).write(output_file_name)
         # lidar data
         self.points = None
         self.obj_idx = None

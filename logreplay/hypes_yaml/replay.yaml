@@ -1,5 +1,5 @@
-root_dir: '/media/hdd/yuan/koko/data/OPV2V/test'
-output_dir: '/media/hdd/yuan/koko/data/OPV2V/additional/test'
+root_dir: '/koko/OPV2V/test'
+output_dir: '/koko/OPV2V/temporal/test'
 map: # corresponding to bev map
   activate: true
   visualize: false

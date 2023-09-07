@@ -3,15 +3,65 @@ import random
 import sys
 from collections import OrderedDict
 
+import tqdm
+
 sys.path.append("/opt/carla-simulator/PythonAPI/carla/dist/carla-0.9.13-py3.7-linux-x86_64.egg")
 import carla
 import numpy as np
+from scipy.spatial.transform.rotation import Rotation as R
 
 from logreplay.assets.utils import find_town, find_blue_print
 from logreplay.assets.presave_lib import bcolors
 from logreplay.map.map_manager import MapManager
 from logreplay.sensors.sensor_manager import SensorManager
 from opencood.hypes_yaml.yaml_utils import load_yaml, save_yaml
+
+
+def transformation_matrix_to_pose(tf):
+    tf = np.array(tf)
+    r = R.from_matrix(tf[:3, :3]).as_euler('yzx', degrees=True)
+    pose = np.concatenate([tf[:3, 3], r], axis=0)
+    return pose
+
+
+def transformation_pose_to_matrix(pose):
+    tf = np.eye(4)
+    tf[:3, :3] = R.from_euler('yzx', pose[3:]).as_matrix()
+    tf[:3, 3] = pose[:3]
+    return tf
+
+
+def interpolate(prev_pose, cur_pose, steps=10):
+    to_mat = False
+    if len(prev_pose) == 4:
+        prev_pose = transformation_matrix_to_pose(prev_pose)
+        cur_pose = transformation_matrix_to_pose(cur_pose)
+        to_mat = True
+    else:
+        prev_pose = np.array(prev_pose)
+        cur_pose = np.array(cur_pose)
+    for i in [3, 4, 5]:
+        if abs(cur_pose[i] - prev_pose[i]) > 180:
+            if cur_pose[i] > prev_pose[i]:
+                cur_pose[i] -= 360
+            else:
+                prev_pose[i] -= 360
+
+    poses = np.linspace(prev_pose, cur_pose, steps + 1)
+    poses[:, 3:] = poses[:, 3:] % 360
+    poses[:, 3:] = poses[:, 3:] - 360 * (poses[:, 3:] > 180).astype(float)
+    poses[:, 3:] = poses[:, 3:] + 360 * (poses[:, 3:] < -180).astype(float)
+    # if abs((poses[0, 3:] - poses[1, 3:]).mean()) > 1:
+    #     print(poses[0])
+    #     print(poses[1])
+    #     print('--------------')
+    if to_mat:
+        tfs = []
+        for pose in poses:
+            tfs.append(transformation_pose_to_matrix(pose).tolist())
+        return tfs
+    else:
+        return poses.tolist()
 
 
 class SceneManager:
@@ -61,7 +111,7 @@ class SceneManager:
         yaml_files = \
             sorted([os.path.join(cav_sample, x)
                     for x in os.listdir(cav_sample) if
-                    x.endswith('.yaml') and 'additional' not in x])
+                    x.endswith('.yaml') and 'additional' not in x and 'sparse_gt' not in x])
         self.timestamps = self.extract_timestamps(yaml_files)
 
         # loop over all timestamps
@@ -80,12 +130,108 @@ class SceneManager:
                 self.database[timestamp][cav_id]['yaml'] = \
                     yaml_file
 
+        # interpolate replay meta to get more fine-grained time interval for simulation
+        # self.interpolate()
+
         # this is used to dynamically save all information of the objects
         self.veh_dict = OrderedDict()
         # used to count timestamp
         self.cur_count = 0
         # used for HDMap
         self.map_manager = None
+
+    def interpolate(self):
+        steps = 10
+        self.database_interp = OrderedDict()
+        self.timestamps_interp = []
+        for i in tqdm.tqdm(range(len(self.timestamps))):
+            frame = self.timestamps[i]
+            cur_database = self.database[frame]
+            database_interp = OrderedDict()
+            if i == 0:
+                database_interp[f'{frame}.0'] = {cav: load_yaml(cur_database[cav]['yaml']) for cav in cur_database}
+            else:
+                for cav in cur_database:
+                    cur_cav_content = load_yaml(cur_database[cav]['yaml'])
+                    prev_cav_content = load_yaml(prev_database[cav]['yaml'])
+                    keys = ['camera0', 'camera1', 'camera2', 'camera3', 'lidar_pose', 'true_ego_pos', 'vehicles']
+                    for k in keys:
+                        out_dict = self.interpolate_one_attribute(prev_cav_content,
+                                                                  cur_cav_content,
+                                                                  k, steps)
+                        for j in range(1, steps + 1):
+                            if j < steps:
+                                fk = f'{prev_frame}.{j}'
+                            else:
+                                fk = f'{frame}.0'
+
+                            if fk not in database_interp:
+                                database_interp[fk] = {}
+                            if cav not in database_interp[fk]:
+                                database_interp[fk][cav] = {}
+
+                            # get ego speed
+                            if k == 'true_ego_pos':
+                                offset = np.array([out_dict[j][k][0] - out_dict[j-1][k][0],
+                                                   out_dict[j][k][1] - out_dict[j-1][k][1]])
+                                out_dict[j]['speed'] = float(np.linalg.norm(offset) * steps * 10 * 3.6)
+                            database_interp[fk][cav].update(out_dict[j])
+
+            prev_database = cur_database
+            prev_frame = frame
+
+
+            # dump yaml files
+            for f, fdict in database_interp.items():
+                for cav, cav_dict in fdict.items():
+                    os.makedirs(os.path.join(self.output_root, cav), exist_ok=True)
+                    save_yaml(cav_dict, os.path.join(self.output_root, cav, f'{f}.yaml'))
+
+    def interpolate_one_attribute(self, prev, cur, attri, steps=10):
+        out_dict = {i: {} for i in range(steps + 1)}
+
+        if 'camera' in attri:
+            cords_interp = interpolate(prev[attri]['cords'], cur[attri]['cords'], steps)
+            extri_interp = interpolate(prev[attri]['extrinsic'], cur[attri]['extrinsic'], steps)
+            for i in range(steps + 1):
+                out_dict[i][attri] = {
+                    'cords': cords_interp[i],
+                    'intrinsic': prev[attri]['intrinsic'],
+                    'extrinsic': extri_interp[i]
+                }
+        elif attri == 'vehicles':
+            for vid in cur[attri]:
+                if vid in prev[attri]:
+                    cur_pose = cur[attri][vid]['location'] + cur[attri][vid]['angle']
+                    prev_pose = prev[attri][vid]['location'] + prev[attri][vid]['angle']
+                    pose_interp = interpolate(prev_pose, cur_pose, steps)
+                    for i in range(steps + 1):
+                        if attri not in out_dict[i]:
+                            out_dict[i][attri] = {}
+                        if i == steps:
+                            speed = cur[attri][vid]['speed']
+                        else:
+                            offset = np.array([pose_interp[i+1][0] - pose_interp[i][0],
+                                               pose_interp[i+1][1] - pose_interp[i][1]])
+                            speed = float(np.linalg.norm(offset) * steps * 10 * 3.6)
+                        out_dict[i][attri][vid] = {
+                            'angle': pose_interp[i][3:],
+                            'center': cur[attri][vid]['center'],
+                            'extent': cur[attri][vid]['extent'],
+                            'location': pose_interp[i][:3],
+                            'speed': speed
+                        }
+                else:
+                    # if a vehicle is only in the current frame, copy it to the last entry of out dict
+                    if attri not in out_dict[steps]:
+                        out_dict[steps][attri] = {}
+                    out_dict[steps][attri][vid] = cur[attri][vid]
+
+        else:
+            interp = interpolate(prev[attri], cur[attri], steps)
+            for i in range(steps + 1):
+                out_dict[i][attri] = interp[i]
+        return out_dict
 
     def start_simulator(self):
         """
@@ -200,11 +346,14 @@ class SceneManager:
         self.world.tick()
 
         # we dump data after tick() so the agent can retrieve the newest info
-        self.sensor_dumping(cur_timestamp)
-        self.object_dumping()
-        self.map_dumping()
+        # self.sensor_dumping(cur_timestamp)
+        # self.object_dumping()
+        # self.map_dumping()
 
         return True
+
+    def sub_tck(self):
+        pass
 
     def static_object_dumping(self):
         static_vehicles = self.world.get_level_bbs(carla.CityObjectLabel.Vehicles)
@@ -224,6 +373,8 @@ class SceneManager:
                 }
                 cnt += 1
         filename = os.path.join(self.output_root, 'static_vehicles.yaml')
+        if not os.path.exists(self.output_root):
+            os.makedirs(self.output_root)
         save_yaml(vehicles, filename)
 
     def object_dumping(self):
