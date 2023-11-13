@@ -37,6 +37,9 @@ def test_parser():
     parser.add_argument('--save_npy', action='store_true',
                         help='whether to save prediction and gt result'
                              'in npy_test file')
+    parser.add_argument('--save_result', action='store_true',
+                        help='whether to save prediction and gt result'
+                             'in .pth file')
     parser.add_argument('--global_sort_detections', action='store_true',
                         help='whether to globally sort detections by confidence score.'
                              'If set to True, it is the mainstream AP computing method,'
@@ -143,11 +146,20 @@ def main():
                 if not os.path.exists(npy_save_path):
                     os.makedirs(npy_save_path)
                 inference_utils.save_prediction_gt(pred_box_tensor,
+                                                   pred_score,
                                                    gt_box_tensor,
                                                    batch_data['ego'][
                                                        'origin_lidar'][0],
                                                    i,
                                                    npy_save_path)
+            if opt.save_result:
+                save_path = os.path.join(opt.model_dir, 'result')
+                if not os.path.exists(save_path):
+                    os.makedirs(save_path)
+                inference_utils.save_prediction_gt_torch(pred_box_tensor,
+                                                         gt_box_tensor,
+                                                         i,
+                                                         save_path)
 
             if opt.show_vis or opt.save_vis:
                 vis_save_path = ''

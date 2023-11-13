@@ -34,6 +34,7 @@ MANIFEST
 #  before PyInstaller builds the exe, so as to inject date/other infos into it.
 *.manifest
 *.spec
+ckpt/
 
 # Installer logs
 pip-log.txt
@@ -138,3 +139,4 @@ opv2v_data_dumping
 checkpoints
 DCOS.md
 spconv/
+test/
