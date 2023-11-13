@@ -140,3 +140,4 @@ checkpoints
 DCOS.md
 spconv/
 test/
+ckpt/
