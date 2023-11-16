@@ -157,7 +157,10 @@ def main():
                 if not os.path.exists(save_path):
                     os.makedirs(save_path)
                 inference_utils.save_prediction_gt_torch(pred_box_tensor,
+                                                         pred_score,
                                                          gt_box_tensor,
+                                                         batch_data['ego'][
+                                                             'origin_lidar'][0],
                                                          i,
                                                          save_path)
 
