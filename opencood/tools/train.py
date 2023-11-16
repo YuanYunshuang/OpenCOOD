@@ -36,6 +36,8 @@ def train_parser():
 def main():
     opt = train_parser()
     hypes = yaml_utils.load_yaml(opt.hypes_yaml, opt)
+    if not os.path.exists(hypes['root_dir']):
+        hypes['root_dir'] = "/bigwork/nhgmyyua/opv2v/train"
 
     multi_gpu_utils.init_distributed_mode(opt)
 
