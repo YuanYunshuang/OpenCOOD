@@ -24,7 +24,7 @@ class SpVoxelPreprocessor(BasePreprocessor):
             from spconv.utils import VoxelGeneratorV2 as VoxelGenerator
         except:
             # spconv v2.x
-            from spconv.utils import Point2VoxelCPU3d as VoxelGenerator
+            from spconv.pytorch.utils import PointToVoxel as VoxelGenerator
             self.spconv = 2
         self.lidar_range = self.params['cav_lidar_range']
         self.voxel_size = self.params['args']['voxel_size']
@@ -61,8 +61,8 @@ class SpVoxelPreprocessor(BasePreprocessor):
         if self.spconv == 1:
             voxel_output = self.voxel_generator.generate(pcd_np)
         else:
-            pcd_tv = tv.from_numpy(pcd_np)
-            voxel_output = self.voxel_generator.point_to_voxel(pcd_tv)
+            pcd_th = torch.from_numpy(pcd_np)
+            voxel_output = self.voxel_generator(pcd_th)
         if isinstance(voxel_output, dict):
             voxels, coordinates, num_points = \
                 voxel_output['voxels'], voxel_output['coordinates'], \
