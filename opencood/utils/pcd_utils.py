@@ -7,7 +7,6 @@
 Utility functions related to point cloud
 """
 
-import open3d as o3d
 import numpy as np
 
 
@@ -25,31 +24,31 @@ def pcd_to_np(pts_filename):
     return points
 
 
-def pcd_to_np_(pcd_file):
-    """
-    Read  pcd and return numpy array.
-
-    Parameters
-    ----------
-    pcd_file : str
-        The pcd file that contains the point cloud.
-
-    Returns
-    -------
-    pcd : o3d.PointCloud
-        PointCloud object, used for visualization
-    pcd_np : np.ndarray
-        The lidar data in numpy format, shape:(n, 4)
-
-    """
-    pcd = o3d.io.read_point_cloud(pcd_file)
-
-    xyz = np.asarray(pcd.points)
-    # we save the intensity in the first channel
-    intensity = np.expand_dims(np.asarray(pcd.colors)[:, 0], -1)
-    pcd_np = np.hstack((xyz, intensity))
-
-    return np.asarray(pcd_np, dtype=np.float32)
+# def pcd_to_np_(pcd_file):
+#     """
+#     Read  pcd and return numpy array.
+#
+#     Parameters
+#     ----------
+#     pcd_file : str
+#         The pcd file that contains the point cloud.
+#
+#     Returns
+#     -------
+#     pcd : o3d.PointCloud
+#         PointCloud object, used for visualization
+#     pcd_np : np.ndarray
+#         The lidar data in numpy format, shape:(n, 4)
+#
+#     """
+#     pcd = o3d.io.read_point_cloud(pcd_file)
+#
+#     xyz = np.asarray(pcd.points)
+#     # we save the intensity in the first channel
+#     intensity = np.expand_dims(np.asarray(pcd.colors)[:, 0], -1)
+#     pcd_np = np.hstack((xyz, intensity))
+#
+#     return np.asarray(pcd_np, dtype=np.float32)
 
 
 def mask_points_by_range(points, limit_range):
