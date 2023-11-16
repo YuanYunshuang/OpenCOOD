@@ -20,7 +20,7 @@ from opencood.utils.box_overlaps import bbox_overlaps
 try:
     from opencood.visualization import vis_utils
 except:
-    pass
+    print("`from opencood.visualization import vis_utils` failed-")
 
 
 class VoxelPostprocessor(BasePostprocessor):

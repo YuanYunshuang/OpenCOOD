@@ -17,7 +17,7 @@ from opencood.utils import box_utils
 try:
     from opencood.visualization import vis_utils
 except:
-    pass
+    print("`from opencood.visualization import vis_utils` failed-")
 
 
 class BevPostprocessor(BasePostprocessor):
