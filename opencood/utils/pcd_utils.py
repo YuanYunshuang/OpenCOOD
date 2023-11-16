@@ -11,7 +11,21 @@ import open3d as o3d
 import numpy as np
 
 
-def pcd_to_np(pcd_file):
+def pcd_to_np(pts_filename):
+    with open(pts_filename, "r") as pcd_file:
+        flag = False
+        points = []
+        for line in pcd_file.readlines():
+            if flag:
+                points.append([float(l.strip()) for l in line.split(' ')])
+            else:
+                if 'DATA' in line:
+                    flag = True
+        points = np.array(points, dtype=np.float32)
+    return points
+
+
+def pcd_to_np_(pcd_file):
     """
     Read  pcd and return numpy array.
 
