@@ -1,4 +1,5 @@
 import os
+import shutil
 from collections import OrderedDict
 
 import tqdm
@@ -32,7 +33,7 @@ class ScenariosManager:
         scenario_folders = sorted([os.path.join(root_dir, x)
                                    for x in os.listdir(root_dir) if
                                    os.path.isdir(os.path.join(root_dir, x))])
-        scenario_folders = ['/koko/OPV2V/temporal/test/2021_08_18_19_48_05']
+        scenario_folders = [f'{root_dir}/2021_08_18_19_48_05']
         self.scenario_database = OrderedDict()
 
         # loop over all scenarios
@@ -42,7 +43,7 @@ class ScenariosManager:
 
             # load the collection yaml file
             protocol_yml = [x for x in os.listdir(scenario_folder)
-                            if x.endswith('.yaml')]
+                            if x.endswith('.yaml') and 'protocol' in x]
             collection_params = load_yaml(os.path.join(scenario_folder,
                                                        protocol_yml[0]))
 
@@ -53,6 +54,11 @@ class ScenariosManager:
                                   scenario_params)
             self.scenario_database[scene_name].update({'scene_manager':
                                                        cur_sg})
+
+    def reset_scenes(self, root_dir):
+        self.scene_params['root_dir'] = root_dir
+        self.__init__(self.scene_params)
+
 
     def tick(self):
         """
@@ -71,18 +77,25 @@ class ScenariosManager:
 
             scene_manager.close()
 
-    def interpolate_scenes(self):
+    def interpolate_scenes(self, steps=10):
         for scene_name, scene_content in self.scenario_database.items():
             print('log replay %s' % scene_name)
             scene_manager = scene_content['scene_manager']
-            scene_manager.interpolate()
+            scene_manager.interpolate(steps)
+            # copy protocol
+            scene_folder = os.path.join(self.scene_params['root_dir'], scene_name)
+            protocol_yml = [x for x in os.listdir(scene_folder)
+                            if x.endswith('.yaml')]
+            shutil.copy(os.path.join(self.scene_params['root_dir'], scene_name, protocol_yml[0]),
+                        os.path.join(self.scene_params['output_dir'], scene_name, protocol_yml[0]))
 
 
 if __name__ == '__main__':
     from opencood.hypes_yaml.yaml_utils import load_yaml
     scene_params = load_yaml('../hypes_yaml/replay.yaml')
     scenarion_manager = ScenariosManager(scenario_params=scene_params)
-    # scenarion_manager.interpolate_scenes()
+    scenarion_manager.interpolate_scenes()
+    scenarion_manager.reset_scenes(scene_params['output_dir'])
     scenarion_manager.tick()
     print('test passed')
 

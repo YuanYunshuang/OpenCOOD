@@ -64,6 +64,62 @@ def interpolate(prev_pose, cur_pose, steps=10):
         return poses.tolist()
 
 
+def interpolate_one_attribute(prev, cur, attri, steps=10):
+    """
+    Parameters
+    ----------
+    prev : dict, meta info of previous frame
+    cur : dict, meta info of current frame
+    attri : list, attributs to be interpolated, such as camera parameter, vehicle bounding boxes
+    steps : int, number of steps to interpolate for each frame.
+
+    """
+    out_dict = {i: {} for i in range(steps + 1)}
+
+    if 'camera' in attri:
+        cords_interp = interpolate(prev[attri]['cords'], cur[attri]['cords'], steps)
+        extri_interp = interpolate(prev[attri]['extrinsic'], cur[attri]['extrinsic'], steps)
+        for i in range(steps + 1):
+            out_dict[i][attri] = {
+                'cords': cords_interp[i],
+                'intrinsic': prev[attri]['intrinsic'],
+                'extrinsic': extri_interp[i]
+            }
+    elif attri == 'vehicles':
+        for vid in cur[attri]:
+            if vid in prev[attri]:
+                cur_pose = cur[attri][vid]['location'] + cur[attri][vid]['angle']
+                prev_pose = prev[attri][vid]['location'] + prev[attri][vid]['angle']
+                pose_interp = interpolate(prev_pose, cur_pose, steps)
+                for i in range(steps + 1):
+                    if attri not in out_dict[i]:
+                        out_dict[i][attri] = {}
+                    if i == steps:
+                        speed = cur[attri][vid]['speed']
+                    else:
+                        offset = np.array([pose_interp[i+1][0] - pose_interp[i][0],
+                                           pose_interp[i+1][1] - pose_interp[i][1]])
+                        speed = float(np.linalg.norm(offset) * steps * 10 * 3.6)
+                    out_dict[i][attri][vid] = {
+                        'angle': pose_interp[i][3:],
+                        'center': cur[attri][vid]['center'],
+                        'extent': cur[attri][vid]['extent'],
+                        'location': pose_interp[i][:3],
+                        'speed': speed
+                    }
+            else:
+                # if a vehicle is only in the current frame, copy it to the last entry of out dict
+                if attri not in out_dict[steps]:
+                    out_dict[steps][attri] = {}
+                out_dict[steps][attri][vid] = cur[attri][vid]
+
+    else:
+        interp = interpolate(prev[attri], cur[attri], steps)
+        for i in range(steps + 1):
+            out_dict[i][attri] = interp[i]
+    return out_dict
+
+
 class SceneManager:
     """
     Manager for each scene for spawning, moving and destroying.
@@ -140,10 +196,11 @@ class SceneManager:
         # used for HDMap
         self.map_manager = None
 
-    def interpolate(self):
-        steps = 10
-        self.database_interp = OrderedDict()
-        self.timestamps_interp = []
+    def interpolate(self, steps=10):
+        """Interpolate 10 sub steps in each frame."""
+        print(f"Interpolating meta infos for {self.scene_name}...")
+        # self.database_interp = OrderedDict()
+        # self.timestamps_interp = []
         for i in tqdm.tqdm(range(len(self.timestamps))):
             frame = self.timestamps[i]
             cur_database = self.database[frame]
@@ -152,11 +209,13 @@ class SceneManager:
                 database_interp[f'{frame}.0'] = {cav: load_yaml(cur_database[cav]['yaml']) for cav in cur_database}
             else:
                 for cav in cur_database:
+                    if os.path.exists(os.path.join(self.output_root, cav, f'{frame}.0.yaml')):
+                        continue
                     cur_cav_content = load_yaml(cur_database[cav]['yaml'])
                     prev_cav_content = load_yaml(prev_database[cav]['yaml'])
                     keys = ['camera0', 'camera1', 'camera2', 'camera3', 'lidar_pose', 'true_ego_pos', 'vehicles']
                     for k in keys:
-                        out_dict = self.interpolate_one_attribute(prev_cav_content,
+                        out_dict = interpolate_one_attribute(prev_cav_content,
                                                                   cur_cav_content,
                                                                   k, steps)
                         for j in range(1, steps + 1):
@@ -180,58 +239,11 @@ class SceneManager:
             prev_database = cur_database
             prev_frame = frame
 
-
             # dump yaml files
             for f, fdict in database_interp.items():
                 for cav, cav_dict in fdict.items():
                     os.makedirs(os.path.join(self.output_root, cav), exist_ok=True)
                     save_yaml(cav_dict, os.path.join(self.output_root, cav, f'{f}.yaml'))
-
-    def interpolate_one_attribute(self, prev, cur, attri, steps=10):
-        out_dict = {i: {} for i in range(steps + 1)}
-
-        if 'camera' in attri:
-            cords_interp = interpolate(prev[attri]['cords'], cur[attri]['cords'], steps)
-            extri_interp = interpolate(prev[attri]['extrinsic'], cur[attri]['extrinsic'], steps)
-            for i in range(steps + 1):
-                out_dict[i][attri] = {
-                    'cords': cords_interp[i],
-                    'intrinsic': prev[attri]['intrinsic'],
-                    'extrinsic': extri_interp[i]
-                }
-        elif attri == 'vehicles':
-            for vid in cur[attri]:
-                if vid in prev[attri]:
-                    cur_pose = cur[attri][vid]['location'] + cur[attri][vid]['angle']
-                    prev_pose = prev[attri][vid]['location'] + prev[attri][vid]['angle']
-                    pose_interp = interpolate(prev_pose, cur_pose, steps)
-                    for i in range(steps + 1):
-                        if attri not in out_dict[i]:
-                            out_dict[i][attri] = {}
-                        if i == steps:
-                            speed = cur[attri][vid]['speed']
-                        else:
-                            offset = np.array([pose_interp[i+1][0] - pose_interp[i][0],
-                                               pose_interp[i+1][1] - pose_interp[i][1]])
-                            speed = float(np.linalg.norm(offset) * steps * 10 * 3.6)
-                        out_dict[i][attri][vid] = {
-                            'angle': pose_interp[i][3:],
-                            'center': cur[attri][vid]['center'],
-                            'extent': cur[attri][vid]['extent'],
-                            'location': pose_interp[i][:3],
-                            'speed': speed
-                        }
-                else:
-                    # if a vehicle is only in the current frame, copy it to the last entry of out dict
-                    if attri not in out_dict[steps]:
-                        out_dict[steps][attri] = {}
-                    out_dict[steps][attri][vid] = cur[attri][vid]
-
-        else:
-            interp = interpolate(prev[attri], cur[attri], steps)
-            for i in range(steps + 1):
-                out_dict[i][attri] = interp[i]
-        return out_dict
 
     def start_simulator(self):
         """
@@ -346,9 +358,9 @@ class SceneManager:
         self.world.tick()
 
         # we dump data after tick() so the agent can retrieve the newest info
-        # self.sensor_dumping(cur_timestamp)
-        # self.object_dumping()
-        # self.map_dumping()
+        self.sensor_dumping(cur_timestamp)
+        self.object_dumping()
+        self.map_dumping()
 
         return True
 

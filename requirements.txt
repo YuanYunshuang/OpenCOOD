@@ -4,5 +4,5 @@ open3d
 opencv-python
 cython
 tensorboardX
-shapely
+shapely==1.8
 einops

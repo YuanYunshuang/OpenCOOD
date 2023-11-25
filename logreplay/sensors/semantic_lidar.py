@@ -199,8 +199,7 @@ class SemanticLidar(BaseSensor):
 
     def data_dump(self, output_root, cur_timestamp, ext='.ply'):
         # dump lidar
-        output_file_name = os.path.join(output_root,
-                                       cur_timestamp + ext)
+        output_file_name = os.path.join(output_root, cur_timestamp + ext)
         if ext == '.bin':
             data = getattr(self, 'data', None)
             # waite data to prevent data stream error because of late coming data
