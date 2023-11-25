@@ -103,14 +103,15 @@ def save_prediction_gt(pred_tensor, gt_tensor, pcd, timestamp, save_path):
     np.save(os.path.join(save_path, '%04d_gt.npy_test' % timestamp), gt_np)
 
 
-def save_prediction_gt_torch(pred_tensor, pred_score, gt_tensor, timestamp, save_path):
+def save_prediction_gt_torch(pred_tensor, pred_score, gt_tensor, points, timestamp, save_path):
     """
     Save prediction and gt tensor to pth file.
     """
     torch.save({
         'pred': pred_tensor,
         'score': pred_score,
-        'gt': gt_tensor
+        'gt': gt_tensor,
+        'points': points
     }, os.path.join(save_path, f"{timestamp}.pth"))
 
 

@@ -1,6 +1,6 @@
 name: point_pillar_fcooper
-root_dir: 'opv2v_data_dumping/train'
-validate_dir: 'opv2v_data_dumping/validate'
+root_dir: "/koko/OPV2V/train"
+validate_dir: "/koko/OPV2V/test"
 
 yaml_parser: "load_point_pillar_params"
 train_params:
