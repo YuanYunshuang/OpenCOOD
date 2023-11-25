@@ -14,7 +14,10 @@ from opencood.utils.transformation_utils import dist_to_continuous
 from opencood.data_utils.post_processor.base_postprocessor \
     import BasePostprocessor
 from opencood.utils import box_utils
-from opencood.visualization import vis_utils
+try:
+    from opencood.visualization import vis_utils
+except:
+    print("`from opencood.visualization import vis_utils` failed-")
 
 
 class BevPostprocessor(BasePostprocessor):

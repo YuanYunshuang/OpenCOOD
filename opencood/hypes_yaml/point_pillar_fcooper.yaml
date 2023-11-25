@@ -1,12 +1,17 @@
 name: point_pillar_fcooper
+<<<<<<< HEAD
 root_dir: "/koko/OPV2V/train"
 validate_dir: "/koko/OPV2V/test"
+=======
+root_dir: '/koko/OPV2V/train'
+validate_dir: '/koko/OPV2V/test'
+>>>>>>> 324f5d9289eb36e596de53692f6ec42afe7a4ef8
 
 yaml_parser: "load_point_pillar_params"
 train_params:
   batch_size: &batch_size 2
   epoches: 15
-  eval_freq: 1
+  eval_freq: 1000
   save_freq: 1
   max_cav: &max_cav 5
 

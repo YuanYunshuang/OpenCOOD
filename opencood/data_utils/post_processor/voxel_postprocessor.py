@@ -17,7 +17,10 @@ from opencood.data_utils.post_processor.base_postprocessor \
     import BasePostprocessor
 from opencood.utils import box_utils
 from opencood.utils.box_overlaps import bbox_overlaps
-from opencood.visualization import vis_utils
+try:
+    from opencood.visualization import vis_utils
+except:
+    print("`from opencood.visualization import vis_utils` failed-")
 
 
 class VoxelPostprocessor(BasePostprocessor):
