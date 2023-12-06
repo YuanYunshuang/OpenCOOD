@@ -34,6 +34,7 @@ class ScenariosManager:
                                    for x in os.listdir(root_dir) if
                                    os.path.isdir(os.path.join(root_dir, x))])
         # scenario_folders = [f'{root_dir}/2021_08_18_19_48_05']
+        scenario_folders = scenario_folders[:1]
         self.scenario_database = OrderedDict()
 
         # loop over all scenarios
@@ -62,7 +63,7 @@ class ScenariosManager:
         self.__init__(self.scene_params)
 
 
-    def tick(self):
+    def tick(self, steps=10):
         """
         Tick for every scene manager to do the log replay.
         """
@@ -71,7 +72,7 @@ class ScenariosManager:
             scene_manager = scene_content['scene_manager']
             run_flag = True
 
-            scene_manager.start_simulator()
+            scene_manager.start_simulator(steps)
 
             with tqdm.tqdm(total=len(scene_manager.timestamps), leave=True, desc=scene_name) as pbar:
                 while run_flag:
@@ -97,8 +98,8 @@ if __name__ == '__main__':
     scene_params = load_yaml('../hypes_yaml/replay.yaml')
     scenario_manager = ScenariosManager(scenario_params=scene_params)
     scenario_manager.interpolate_scenes()
-    # scenario_manager.reset_scenes(scene_params['output_dir'])
-    # scenario_manager.tick()
+    scenario_manager.reset_scenes(scene_params['output_dir'])
+    scenario_manager.tick()
     print('test passed')
 
 

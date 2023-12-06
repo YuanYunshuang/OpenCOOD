@@ -3,7 +3,7 @@ output_dir: '/koko/OPV2V/temporal_dump/train'
 map: # corresponding to bev map
   activate: true
   visualize: false
-  use_lidar_center: true
+  use_lidar_center: false
 
   save_yml: false
   save_static: false

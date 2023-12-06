@@ -77,6 +77,8 @@ def interpolate_one_attribute(prev, cur, attri, steps=10):
     out_dict = {i: {} for i in range(steps + 1)}
 
     if 'camera' in attri:
+        if attri not in prev or attri not in cur:
+            return None
         cords_interp = interpolate(prev[attri]['cords'], cur[attri]['cords'], steps)
         extri_interp = interpolate(prev[attri]['extrinsic'], cur[attri]['extrinsic'], steps)
         for i in range(steps + 1):
@@ -218,6 +220,8 @@ class SceneManager:
                         out_dict = interpolate_one_attribute(prev_cav_content,
                                                                   cur_cav_content,
                                                                   k, steps)
+                        if out_dict is None:
+                            continue
                         for j in range(1, steps + 1):
                             if j < steps:
                                 fk = f'{prev_frame}.{j}'
@@ -245,14 +249,14 @@ class SceneManager:
                     os.makedirs(os.path.join(self.output_root, cav), exist_ok=True)
                     save_yaml(cav_dict, os.path.join(self.output_root, cav, f'{f}.yaml'))
 
-    def start_simulator(self):
+    def start_simulator(self, steps):
         """
         Connect to the carla simulator for log replay.
         """
         simulation_config = self.collection_params['world']
 
         # simulation sync mode time step
-        fixed_delta_seconds = simulation_config['fixed_delta_seconds']
+        fixed_delta_seconds = simulation_config['fixed_delta_seconds'] / steps
         weather_config = simulation_config[
             'weather'] if "weather" in simulation_config else None
 
@@ -433,7 +437,7 @@ class SceneManager:
             out_dict['vehicles'] = cur_vehicles
             out_file = os.path.join(
                 self.output_root,
-                cav_id, self.veh_dict[cav_id]['cur_count'] + '.yaml'
+                cav_id, self.veh_dict[cav_id]['cur_count'] + '_objects.yaml'
                 )
             save_yaml(out_dict, out_file)
 
