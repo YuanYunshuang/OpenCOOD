@@ -12,5 +12,6 @@ dependencies:
     - cython
     - pygame
     - tensorboardX
-    - shapely
+    - shapely==1.7
     - einops
+    - plyfile

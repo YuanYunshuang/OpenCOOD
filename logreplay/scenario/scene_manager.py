@@ -209,8 +209,8 @@ class SceneManager:
                 database_interp[f'{frame}.0'] = {cav: load_yaml(cur_database[cav]['yaml']) for cav in cur_database}
             else:
                 for cav in cur_database:
-                    if os.path.exists(os.path.join(self.output_root, cav, f'{frame}.0.yaml')):
-                        continue
+                    # if os.path.exists(os.path.join(self.output_root, cav, f'{frame}.0.yaml')):
+                    #     continue
                     cur_cav_content = load_yaml(cur_database[cav]['yaml'])
                     prev_cav_content = load_yaml(prev_database[cav]['yaml'])
                     keys = ['camera0', 'camera1', 'camera2', 'camera3', 'lidar_pose', 'true_ego_pos', 'vehicles']

@@ -33,7 +33,7 @@ class ScenariosManager:
         scenario_folders = sorted([os.path.join(root_dir, x)
                                    for x in os.listdir(root_dir) if
                                    os.path.isdir(os.path.join(root_dir, x))])
-        scenario_folders = [f'{root_dir}/2021_08_18_19_48_05']
+        # scenario_folders = [f'{root_dir}/2021_08_18_19_48_05']
         self.scenario_database = OrderedDict()
 
         # loop over all scenarios
@@ -43,7 +43,9 @@ class ScenariosManager:
 
             # load the collection yaml file
             protocol_yml = [x for x in os.listdir(scenario_folder)
-                            if x.endswith('.yaml') and 'protocol' in x]
+                            if x.endswith('.yaml')]
+            if len(protocol_yml) > 1:
+                protocol_yml = [x for x in protocol_yml if 'protocol' in x]
             collection_params = load_yaml(os.path.join(scenario_folder,
                                                        protocol_yml[0]))
 
@@ -65,6 +67,7 @@ class ScenariosManager:
         Tick for every scene manager to do the log replay.
         """
         for scene_name, scene_content in self.scenario_database.items():
+            print('log replay %s' % scene_name)
             scene_manager = scene_content['scene_manager']
             run_flag = True
 
@@ -79,7 +82,6 @@ class ScenariosManager:
 
     def interpolate_scenes(self, steps=10):
         for scene_name, scene_content in self.scenario_database.items():
-            print('log replay %s' % scene_name)
             scene_manager = scene_content['scene_manager']
             scene_manager.interpolate(steps)
             # copy protocol
@@ -93,10 +95,10 @@ class ScenariosManager:
 if __name__ == '__main__':
     from opencood.hypes_yaml.yaml_utils import load_yaml
     scene_params = load_yaml('../hypes_yaml/replay.yaml')
-    scenarion_manager = ScenariosManager(scenario_params=scene_params)
-    scenarion_manager.interpolate_scenes()
-    scenarion_manager.reset_scenes(scene_params['output_dir'])
-    scenarion_manager.tick()
+    scenario_manager = ScenariosManager(scenario_params=scene_params)
+    scenario_manager.interpolate_scenes()
+    # scenario_manager.reset_scenes(scene_params['output_dir'])
+    # scenario_manager.tick()
     print('test passed')
 
 
