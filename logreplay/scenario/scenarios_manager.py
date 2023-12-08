@@ -96,14 +96,22 @@ class ScenariosManager:
 if __name__ == '__main__':
     from opencood.hypes_yaml.yaml_utils import load_yaml
     scene_params = load_yaml('../hypes_yaml/replay.yaml')
+    interpolate = False
+
+    # 1. make scenario manager with the official yaml files from root dir
+    # and interpolate yaml files and save to path output_dir
     scenario_manager = ScenariosManager(scenario_params=scene_params)
-    # scenario_manager.interpolate_scenes()
+    if interpolate:
+        scenario_manager.interpolate_scenes()
+
+    # 2. update scenario manager to the output_dir
+    # and run simulation with the interpolated yaml files,
+    # the new objects will be saved to a new yaml file ending with `_objects.yaml`
     scenario_manager.reset_scenes(scene_params['output_dir'])
     scenario_manager.tick()
     print('test passed')
-    # scenario_manager.reset_scenes('/koko/OPV2V/temporal_dump/test')
-    # scenario_manager.tick()
-    # print('test passed')
+
+
 
 
 
