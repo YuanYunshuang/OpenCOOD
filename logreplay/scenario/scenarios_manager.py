@@ -1,5 +1,6 @@
 import os
 import shutil
+import time
 from collections import OrderedDict
 
 import tqdm
@@ -34,7 +35,7 @@ class ScenariosManager:
                                    for x in os.listdir(root_dir) if
                                    os.path.isdir(os.path.join(root_dir, x))])
         # scenario_folders = [f'{root_dir}/2021_08_18_19_48_05']
-        scenario_folders = scenario_folders[:1]
+        scenario_folders = scenario_folders[41:]
         self.scenario_database = OrderedDict()
 
         # loop over all scenarios
@@ -44,9 +45,7 @@ class ScenariosManager:
 
             # load the collection yaml file
             protocol_yml = [x for x in os.listdir(scenario_folder)
-                            if x.endswith('.yaml')]
-            if len(protocol_yml) > 1:
-                protocol_yml = [x for x in protocol_yml if 'protocol' in x]
+                            if x.endswith('.yaml') and 'static_vehicles' not in x]
             collection_params = load_yaml(os.path.join(scenario_folder,
                                                        protocol_yml[0]))
 
@@ -80,6 +79,7 @@ class ScenariosManager:
                     pbar.update(1)
 
             scene_manager.close()
+            time.sleep(5)
 
     def interpolate_scenes(self, steps=10):
         for scene_name, scene_content in self.scenario_database.items():
@@ -97,10 +97,13 @@ if __name__ == '__main__':
     from opencood.hypes_yaml.yaml_utils import load_yaml
     scene_params = load_yaml('../hypes_yaml/replay.yaml')
     scenario_manager = ScenariosManager(scenario_params=scene_params)
-    scenario_manager.interpolate_scenes()
+    # scenario_manager.interpolate_scenes()
     scenario_manager.reset_scenes(scene_params['output_dir'])
     scenario_manager.tick()
     print('test passed')
+    # scenario_manager.reset_scenes('/koko/OPV2V/temporal_dump/test')
+    # scenario_manager.tick()
+    # print('test passed')
 
 
 

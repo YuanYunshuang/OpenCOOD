@@ -1,7 +1,10 @@
+import multiprocessing
 import os
 import random
 import sys
+import time
 from collections import OrderedDict
+from functools import partial
 
 import tqdm
 
@@ -15,6 +18,8 @@ from logreplay.assets.presave_lib import bcolors
 from logreplay.map.map_manager import MapManager
 from logreplay.sensors.sensor_manager import SensorManager
 from opencood.hypes_yaml.yaml_utils import load_yaml, save_yaml
+
+pool = multiprocessing.Pool(4)
 
 
 def transformation_matrix_to_pose(tf):
@@ -169,7 +174,8 @@ class SceneManager:
         yaml_files = \
             sorted([os.path.join(cav_sample, x)
                     for x in os.listdir(cav_sample) if
-                    x.endswith('.yaml') and 'additional' not in x and 'sparse_gt' not in x])
+                    x.endswith('.yaml') and 'additional' not in x
+                    and 'sparse_gt' not in x and 'objects' not in x])
         self.timestamps = self.extract_timestamps(yaml_files)
 
         # loop over all timestamps
@@ -315,7 +321,7 @@ class SceneManager:
         cur_database = self.database[cur_timestamp]
 
         for i, (cav_id, cav_yml) in enumerate(cur_database.items()):
-            cav_content = load_yaml(cav_yml['yaml'])
+            cav_content = load_yaml(cav_yml['yaml'], cloader=True)
             if cav_id not in self.veh_dict:
                 self.spawn_cav(cav_id, cav_content, cur_timestamp)
             else:
@@ -343,7 +349,8 @@ class SceneManager:
                                     carla.Rotation(
                                         pitch=-90
                                     )))
-
+            if 'vehicles' not in cav_content:
+                continue
             for bg_veh_id, bg_veh_content in cav_content['vehicles'].items():
                 if str(bg_veh_id) not in self.veh_dict:
                     self.spawn_bg_vehicles(bg_veh_id,
@@ -362,10 +369,11 @@ class SceneManager:
         self.world.tick()
 
         # we dump data after tick() so the agent can retrieve the newest info
-        self.sensor_dumping(cur_timestamp)
+        # self.sensor_dumping(cur_timestamp)
         self.object_dumping()
-        self.map_dumping()
+        # self.map_dumping()
 
+        time.sleep(0.1)  # leave more time for writing files
         return True
 
     def sub_tck(self):
@@ -430,6 +438,8 @@ class SceneManager:
                 info['true_ego_pos'] = tf2list(pose)
                 cavs[k] = info
         # save yaml files
+        out_files = []
+        out_dicts = []
         for cav_id, info in cavs.items():
             out_dict = {}
             out_dict.update(info)
@@ -439,7 +449,11 @@ class SceneManager:
                 self.output_root,
                 cav_id, self.veh_dict[cav_id]['cur_count'] + '_objects.yaml'
                 )
-            save_yaml(out_dict, out_file)
+            out_files.append(out_file)
+            out_dicts.append(out_dict)
+            # save_yaml(out_dict, out_file)
+        pool.starmap(save_yaml, zip(out_dicts, out_files))
+
 
     def map_dumping(self):
         """

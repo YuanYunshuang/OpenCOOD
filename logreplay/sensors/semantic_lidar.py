@@ -56,10 +56,10 @@ class SemanticLidar(BaseSensor):
         self.timestamp = None
         self.frame = 0
 
-        weak_self = weakref.ref(self)
-        self.sensor.listen(
-            lambda event: SemanticLidar._on_data_event(
-                weak_self, event))
+        # weak_self = weakref.ref(self)
+        # self.sensor.listen(
+        #     lambda event: SemanticLidar._on_data_event(
+        #         weak_self, event))
 
         self.fields = {'x': 'f4', 'y': 'f4', 'z': 'f4', 'ObjIdx': 'u4', 'ObjTag': 'u4', 'ring': 'u1'}
         self.np_types = {'f4': np.float32, 'u4': np.uint32, 'u1': np.uint8}
